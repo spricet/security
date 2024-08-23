@@ -39,6 +39,7 @@ import java.security.AccessController;
 import java.security.MessageDigest;
 import java.security.PrivilegedAction;
 import java.security.Security;
+import java.security.Provider;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -304,21 +305,7 @@ public final class OpenSearchSecurityPlugin extends OpenSearchSecuritySSLPlugin 
         demoCertHashes.add("3e839e2b059036a99ee4f742814995f2fb0ced7e9d68a47851f43a3c630b5324");
         demoCertHashes.add("9b13661c073d864c28ad7b13eda67dcb6cbc2f04d116adc7c817c20b4c7ed361");
 
-        final SecurityManager sm = System.getSecurityManager();
-
-        if (sm != null) {
-            sm.checkPermission(new SpecialPermission());
-        }
-
-        AccessController.doPrivileged(new PrivilegedAction<Object>() {
-            @Override
-            public Object run() {
-                if(Security.getProvider("BC") == null) {
-                    Security.addProvider(new BouncyCastleProvider());
-                }
-                return null;
-            }
-        });
+        tryAddSecurityProvider();
 
         final String advancedModulesEnabledKey = ConfigConstants.SECURITY_ADVANCED_MODULES_ENABLED;
         if (settings.hasValue(advancedModulesEnabledKey)) {
@@ -1183,5 +1170,29 @@ public final class OpenSearchSecurityPlugin extends OpenSearchSecuritySSLPlugin 
         public void stop() {
         }
 
+    }
+
+    @SuppressWarnings("removal")
+    private void tryAddSecurityProvider() {
+        final SecurityManager sm = System.getSecurityManager();
+
+        if (sm != null) {
+            sm.checkPermission(new SpecialPermission());
+        }
+
+        // Add provider if on the classpath.
+        AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
+            if (Security.getProvider("BC") == null) {
+                try {
+                    Class<?> providerClass = Class.forName("org.bouncycastle.jce.provider.BouncyCastleProvider");
+                    Provider provider = (Provider) providerClass.getDeclaredConstructor().newInstance();
+                    Security.addProvider(provider);
+                    log.debug("Bouncy Castle Provider added");
+                } catch (Exception e) {
+                    log.debug("Bouncy Castle Provider could not be added", e);
+                }
+            }
+            return null;
+        });
     }
 }
